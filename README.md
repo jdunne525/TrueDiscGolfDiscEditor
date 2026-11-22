@@ -86,6 +86,20 @@ python -m unittest discover -s tests
 
 Covers: locating the disc records in the save, replacing only the value token, values
 landing on the right disc, float and int formatting, unrelated keys staying byte-identical,
-backup and re-read on write, the diff naming a changed wear path, and the CLI commands. One
-test runs against the real baseline snapshot in `saves/` and is skipped if that file is
-removed.
+backup and re-read on write, refusing values that are not numbers, the diff naming a changed
+wear path, the CLI commands, and the window's own behaviour (rows, selection, presets, bulk
+apply, write, snapshot, compare). One test runs against the real baseline snapshot in `saves/`
+and is skipped if that file is removed.
+
+## Troubleshooting
+
+* **The edit is gone after playing** — the game rewrites the save when it quits, so anything
+  written while it was running is lost. Close the game, reload (`F5`), write again.
+  Steam Cloud is not the culprit: neither install has cloud saves, so a vanished edit means
+  the game wrote this file.
+* **The disc still looks new in game** — the save was written, but the game may render wear from
+  a value it also keeps elsewhere. Run the snapshot/diff loop after wearing a disc in game: the
+  diff lists every field that moved, which is the list the editor has to cover.
+* **The save will not open** — the file was edited by something else in the meantime. The write
+  backups (`SaveFile.es3.bak-<timestamp>` next to the save) and the copies in `saves/` are the
+  way back.
