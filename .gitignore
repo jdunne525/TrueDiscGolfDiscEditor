@@ -95,3 +95,13 @@ Thumbs.db
 
 # Folder config file
 Desktop.ini
+
+############
+## True Disc Golf disc editor
+############
+
+# local snapshots and write backups stay out of history; the baseline copies in saves/ are tracked
+saves/snapshot-*.es3
+saves/*.es3.bak-*
+__pycache__/
+*.pyc

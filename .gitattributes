@@ -14,3 +14,5 @@
 *.S text eol=crlf
 *.SCM text eol=crlf
 *.scm text eol=crlf
+# Easy Save 3 files keep their exact bytes; the editor compares them byte for byte
+*.es3 -text
