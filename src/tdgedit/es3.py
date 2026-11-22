@@ -17,9 +17,6 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-# Open/pretty-print style the game uses; only used when a file has to be created whole.
-INDENT = "\t"
-
 
 def read_text(path: str) -> str:
     """Read the save as text without touching line endings."""
@@ -196,10 +193,6 @@ class FieldEdit:
     start: int
     end: int
     replacement: str
-
-    @property
-    def absolute(self) -> bool:
-        return True
 
 
 def build_edits(text: str, spans: list[Span], changes: Iterable[tuple[int, str, Any]]) -> list[FieldEdit]:
