@@ -3,6 +3,9 @@
 This is the calibration loop: snapshot the save, go wear a disc on purpose, snapshot
 again, diff. The diff walks both files key by key and prints every value that changed,
 so the wear fields are identified by evidence and the delta says what one hit costs.
+
+``tdg_cli.py snapshot``, ``snapshots`` and ``diff`` are how this is reached now: the window
+has no buttons for it.
 """
 
 from __future__ import annotations

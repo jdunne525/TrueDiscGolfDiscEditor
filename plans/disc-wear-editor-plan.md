@@ -18,10 +18,10 @@ fade). We want to tune each disc by hand instead of grinding it in game, so:
 
 | Item | Path |
 | --- | --- |
-| Full game install | `G:\Games\steam_joe\steamapps\common\True Disc Golf` (appid 2721210) |
-| Demo install | `C:\SteamLibrary\steamapps\common\True Disc Golf demo` (appid 3413550) |
-| Full game save | `C:\Users\Joe\AppData\LocalLow\Sportsmanlike Games\True Disc Golf\SaveFile.es3` |
-| Demo save | `C:\Users\Joe\AppData\LocalLow\Sportsmanlike Games\True Disc Golf demo\SaveFile.es3` |
+| Full game install | `<steam library>\steamapps\common\True Disc Golf` (appid 2721210) |
+| Demo install | `<steam library>\steamapps\common\True Disc Golf demo` (appid 3413550) |
+| Full game save | `%USERPROFILE%\AppData\LocalLow\Sportsmanlike Games\True Disc Golf\SaveFile.es3` |
+| Demo save | `%USERPROFILE%\AppData\LocalLow\Sportsmanlike Games\True Disc Golf demo\SaveFile.es3` |
 
 Both saves are **Easy Save 3** files that are **not encrypted**: the file is plain JSON
 (LF/TAB indented, `"key" : value`), one object per saved key, each shaped
@@ -32,9 +32,9 @@ vari = colour, nopeus = speed).
 Top-level keys in the full-game save: `asetukset`, `simulatorasetukset`, `kiekotbagissa`,
 `kiekot`, `kierrokset`, `playerstutorial`, `screenasetukset`.
 
-Steam Cloud is not used for either install: `G:\Games\steam_joe\userdata\*` holds appid folders
-for other games but none for 2721210 or 3413550. So a local edit is not quietly restored from
-the cloud — an edit that disappears means the *game* wrote the file, not Steam.
+Steam Cloud is not used for either install: neither appid has a folder under Steam's
+`userdata`, so a local edit is not quietly restored from the cloud — an edit that
+disappears means the *game* wrote the file, not Steam.
 
 ## The wear variables (identified)
 
@@ -80,9 +80,10 @@ hit adds, and how `discwear` is scaled into turn/fade) is not read from disassem
 the editor needs is the stored field, and that is confirmed. The scale is calibrated
 empirically with the snapshot/diff feature described below.
 
-## Current bag, as read from the save on 2026-11-21
+## The bag in the sample save, as read on 2026-11-21
 
-Full game (`True Disc Golf`), 14 discs, **all wear 0**, all in the bag:
+Full game (`True Disc Golf`), 14 discs, **all wear 0**, all in the bag. This is the bag in
+`saves/sample-save.es3`, which is what the real-file test reads:
 
 | numero | category / bag slot | disc | maker | plastic | speed | weight | durability | wear |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -117,26 +118,31 @@ used for the secondary tunables (`durability`, `paino`) and for `favourite`. A b
 result is re-parsed and re-checked before the tool says it succeeded; a failed check
 restores the backup.
 
-The game writes the save when you quit, so edits must be made with the game closed. The
-tool shows a warning when `True Disc Golf.exe` / `True Disc Golf demo.exe` is running and
-asks before writing anyway.
+The tool shows a warning when `True Disc Golf.exe` / `True Disc Golf demo.exe` is running
+and asks before writing anyway, and it re-reads the file before writing: if the file on disk
+is no longer the text the staged edits were made against, the write is refused with
+`SaveChangedError` and nothing is touched, because applying those edits would either fail or
+undo whatever the game just saved. The window then tells the user to reload the save and set
+the values again.
 
 ## Files
 
 * `tdg_editor.py` — GUI entry point (`run_editor.bat` runs it).
-* `tdg_cli.py` — same engine without a GUI: `list`, `set`, `snapshot`, `diff`.
+* `tdg_cli.py` — same engine without a GUI: `disclaimer`, `list`, `set`, `snapshot`, `diff`.
 * `src/tdgedit/es3.py` — ES3 text reader/writer, token-level field editing.
-* `src/tdgedit/savefile.py` — disc model, save paths for both installs, bag slots.
+* `src/tdgedit/savefile.py` — disc model, save paths for both installs, bag slots, the write.
+* `src/tdgedit/disclaimer.py` — the risk wording both front ends show.
 * `src/tdgedit/snapshots.py` — snapshots and the before/after diff that names changed fields.
 * `src/tdgedit/gui.py` — tkinter UI.
 * `tools/metadata_strings.py`, `tools/scan_assets.py` — the read-only probes used to find
-  the wear identifiers in the game binary and assets.
-* `saves/baseline-2026-11-21_*.es3` — the saved game copies taken before any edit, so the
-  comparison run has a starting point.
+  the wear identifiers in the game binary and assets; point them at your own install with
+  `--metadata` / `--dir` (or `TDG_GAME_DIR`).
+* `saves/sample-save.es3` — a save taken from a fresh install before any edit, so the tests
+  cover the real file shape and the comparison run has a starting point.
 
 ## Calibrating the wear scale (the part that needs a round of golf)
 
-1. `python tdg_cli.py snapshot --tag before` (or the Snapshot button).
+1. `python tdg_cli.py snapshot --tag before`.
 2. Play a round, deliberately rub one disc on a trunk or a pole landing, quit the game.
 3. `python tdg_cli.py snapshot --tag after` then `python tdg_cli.py diff saves/snapshot-*before*.es3 saves/snapshot-*after*.es3`.
    The diff prints every field that moved on every disc, so the wear fields are named by
@@ -144,7 +150,7 @@ asks before writing anyway.
 4. Feed that into the editor: presets are fractions of `durability`, and the wear box takes
    any number, so whatever scale the game turns out to use can be set exactly.
 
-## Decisions taken while working alone
+## Decisions
 
 * **Wear scale shown as a fraction of `durability`.** `wear` and `durability` sit together in
   the record and durability is per plastic (2000 / 3000 / 5000), so the editor treats
@@ -159,12 +165,24 @@ asks before writing anyway.
 * **Editable fields:** `wear`, and secondarily `durability`, `paino` (weight) and `favourite`.
   Name, maker, plastic and prefab decide the disc model the game loads, so changing them
   would desync the disc from its ratings; the editor refuses them.
+* **Backups are not optional.** Every write leaves `SaveFile.es3.bak-<date and time>` next to
+  the save holding the file exactly as it was, before anything is written, and there is no
+  flag to skip it. An edit the game cannot read is only recoverable by putting that file back.
+* **The save is read again before a write.** If the file on disk is no longer the text the
+  staged edits were made against, the write is refused and nothing is touched, rather than
+  merging edits into a file the tool has not seen. The user reloads and sets the values
+  again; that is a visible step, and it never quietly undoes what the game just saved.
+* **A load that would throw away unwritten edits asks first.** Reload and choosing another
+  save file warn that the staged edits are not in the file yet and can be backed out of,
+  because staged edits live only in this window.
+* **Snapshot and compare are command line only.** The window has no buttons for them, so the
+  everyday path is read, edit, backup, write; the diff loop is calibration work and
+  `tdg_cli.py snapshot` / `snapshots` / `diff` still do it.
 * **Both installs are supported.** The full game and the demo have separate saves and slightly
   different records (the demo has no `custom` field); the reader handles either.
-* **Nothing was written to the real saves.** The installed game's files were read only. The
-  write path is tested against copies of the real save (`tests/test_es3.py` runs against the
-  committed baseline snapshot). Snapshots of the real saves were taken into `saves/` so the
-  before/after loop starts from a known point.
+* **Nothing was written to a real save.** The installed game's files were read only. The
+  write path is tested against copies of a real save (`tests/test_es3.py` runs against the
+  committed `saves/sample-save.es3`).
 * **Il2CppDumper v6.7.46 rejects this build's metadata (version 39)**, so the arithmetic inside
   `UpdateWear` was not read from disassembly. The identifiers it declares are read instead
   (`tools/metadata_strings.py`), and the missing arithmetic is measured by the diff loop
@@ -172,14 +190,9 @@ asks before writing anyway.
 
 ## Status
 
-* Done: the wear field is identified and corroborated, both saves read, the editor written
-  (window + CLI), 51 tests passing, committed as `1b9b687`.
-* The repo template's `pre-commit` hook opens a Windows folder-picker to choose which hook set
-  to install (`c:\git\hookstubs`: `hooksv1_fw`, `hooksv2_sw`, `no_hooks`). That dialog cannot be
-  answered while working alone, so the commit used `--no-verify`. To install the machine's usual
-  set, make any later commit interactively, or copy the stubs from `c:\git\hookstubs\hooksv2_sw`
-  into `.git\hooks` as the other repos on this machine have.
+* Done: the wear field is identified and corroborated, both installs read, the editor written
+  (window + CLI), tests covering the write and its guards.
 * Open: the amount one hit adds to `wear`, and whether the game keeps a second wear value
   somewhere else (flight model, disc appearance). Both are answered by the calibration loop
-  above: snapshot, wear one disc in game, snapshot, diff. The bag currently has `wear: 0` on
+  above: snapshot, wear one disc in game, snapshot, diff. The sample save has `wear: 0` on
   every disc, so any wear at all shows up in the diff.

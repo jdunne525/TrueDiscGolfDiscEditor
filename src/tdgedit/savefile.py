@@ -72,6 +72,14 @@ def discover_saves() -> list[SaveLocation]:
     return found
 
 
+class SaveChangedError(RuntimeError):
+    """The file on disk is no longer the file the staged edits were made against.
+
+    Raised instead of writing: applying edits to a save the game (or anything else) has
+    rewritten in the meantime would either fail or quietly undo what was just written.
+    """
+
+
 def process_is_running(exe_name: str) -> bool:
     """True when the game is running, so a write would be thrown away when it quits."""
     try:
@@ -241,10 +249,35 @@ class DiscSave:
 
     # -- writing ---------------------------------------------------------------
 
-    def save(self, backup: bool = True) -> str:
-        """Write the staged changes. Returns the backup path (or ``""`` if none was made)."""
+    def changed_on_disk(self) -> bool:
+        """True when the file is no longer the text these edits were made against.
+
+        The whole text is compared, not the modification time: a rewrite that left every
+        byte the same is not worth refusing, and a changed file is refused whatever the
+        timestamp says.
+        """
+        try:
+            current = es3.read_text(self.path)
+        except OSError:
+            return True
+        return current != self.text
+
+    def save(self) -> str:
+        """Write the staged changes, after the file has been backed up.
+
+        Refuses the write with :class:`SaveChangedError` when the file on disk has changed
+        since it was read, and always leaves a ``<save>.bak-<timestamp>`` next to the save
+        before anything is written. Returns the backup path (``""`` when there was nothing
+        to write).
+        """
         if not self.staged:
             return ""
+        if self.changed_on_disk():
+            raise SaveChangedError(
+                f"{self.path} has been written since it was read here, so these staged edits "
+                "belong to a copy of the save that no longer matches the file. Nothing was "
+                "written."
+            )
         changes = [(i, f, v) for (i, f), v in self.staged.items()]
         new_text = es3.apply_edits(self.text, es3.build_edits(self.text, self.spans, changes))
         # Prove the file we are about to leave behind still reads as a save with the
@@ -266,16 +299,16 @@ class DiscSave:
                 continue
             if check.get(key) != self.data[key]:
                 raise AssertionError(f"unrelated key {key} changed during the write")
-        backup_path = ""
-        if backup:
-            stamp = time.strftime("%Y%m%d-%H%M%S")
-            backup_path = f"{self.path}.bak-{stamp}"
-            suffix = 2
-            while os.path.exists(backup_path):
-                backup_path = f"{self.path}.bak-{stamp}-{suffix}"
-                suffix += 1
-            with open(backup_path, "w", encoding="utf-8", newline="") as fh:
-                fh.write(self.text)
+        # The backup is not optional: an edit that the game cannot read is only recoverable
+        # by putting the file back, and the user has to be able to find it.
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        backup_path = f"{self.path}.bak-{stamp}"
+        suffix = 2
+        while os.path.exists(backup_path):
+            backup_path = f"{self.path}.bak-{stamp}-{suffix}"
+            suffix += 1
+        with open(backup_path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(self.text)
         try:
             es3.write_text(self.path, new_text)
         except OSError:

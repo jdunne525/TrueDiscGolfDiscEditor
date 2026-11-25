@@ -1,6 +1,7 @@
-"""Command line front end: read the bag, set wear, snapshot, diff.
+"""Command line front end: the risk notice, the bag, wear edits, snapshots, diffs.
 
-Same engine as the GUI, so the two can be used side by side.
+Same engine as the GUI, so the two can be used side by side. ``--help`` carries the risk
+notice, and ``disclaimer`` prints it on its own.
 """
 
 from __future__ import annotations
@@ -10,8 +11,9 @@ import os
 import sys
 from typing import Any
 
-from . import snapshots
-from .savefile import Disc, DiscSave, discover_saves, process_is_running
+from . import __version__, snapshots
+from .disclaimer import CLI as CLI_DISCLAIMER
+from .savefile import Disc, DiscSave, SaveChangedError, discover_saves, process_is_running
 
 
 def resolve_save(value: str | None) -> str:
@@ -126,8 +128,13 @@ def cmd_set(args: argparse.Namespace) -> int:
     if not args.force and process_is_running(_exe_name_for(path)):
         print("The game is running, so it will overwrite this save when it quits. Use --force to write anyway.")
         return 2
-    backup = save.save(backup=not args.no_backup)
-    print(f"wrote {path}" + (f" (backup: {backup})" if backup else " (no backup)"))
+    try:
+        backup = save.save()
+    except SaveChangedError as exc:
+        print(exc)
+        print("Run the command again so it reads the file that is there now, then set the values again.")
+        return 2
+    print(f"wrote {path}\nbackup of the file as it was before this write: {backup}")
     return 0
 
 
@@ -159,14 +166,28 @@ def cmd_snapshots(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_disclaimer(_: argparse.Namespace) -> int:
+    print(CLI_DISCLAIMER)
+    return 0
+
+
 def cmd_diff(args: argparse.Namespace) -> int:
     print(snapshots.format_diff(args.a, args.b))
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Read and tune disc wear in True Disc Golf saves.")
+    p = argparse.ArgumentParser(
+        description="Read and tune disc wear in True Disc Golf saves.",
+        epilog=CLI_DISCLAIMER,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = p.add_subparsers(dest="command", required=True)
+
+    p.add_argument("--version", action="version", version=f"tdgedit {__version__}")
+
+    sp = sub.add_parser("disclaimer", help="print the risk notice: what an edited save can cost")
+    sp.set_defaults(func=cmd_disclaimer)
 
     sp = sub.add_parser("paths", help="show the detected save files and whether the game is running")
     sp.set_defaults(func=cmd_paths)
@@ -184,7 +205,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--favourite", type=lambda s: s.lower() in ("1", "true", "yes", "on"), default=None)
     sp.add_argument("--save", help="save label or path")
     sp.add_argument("--dry-run", action="store_true")
-    sp.add_argument("--no-backup", action="store_true")
     sp.add_argument("--force", action="store_true", help="write even if the game is running")
     sp.set_defaults(func=cmd_set)
 

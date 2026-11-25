@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Look up an identifier in a Unity IL2CPP global-metadata.dat and show its neighbourhood.
+r"""Look up an identifier in a Unity IL2CPP global-metadata.dat and show its neighbourhood.
 
 global-metadata.dat holds every class, method and field name the game was compiled with as
 null-separated strings, so grepping it tells you what the game calls the thing you are
 after, and what the code around it is named.
 
-    python tools/metadata_strings.py wear
+    python tools/metadata_strings.py wear --metadata "<install>\True Disc Golf_Data\il2cpp_data\Metadata\global-metadata.dat"
     python tools/metadata_strings.py durability --window 2000
 
-Default path is the True Disc Golf install on this machine; pass a metadata file to look at
-another build (the demo ships its own).
+Default is whatever ``TDG_GAME_DIR`` points at (the game's install folder); pass
+``--metadata`` to look at any build, including the demo's own.
+
+The editor itself does not use this probe, and nothing here writes to the game.
 """
 
 from __future__ import annotations
@@ -19,7 +21,13 @@ import os
 import re
 import sys
 
-DEFAULT_METADATA = r"G:\Games\steam_joe\steamapps\common\True Disc Golf\True Disc Golf_Data\il2cpp_data\Metadata\global-metadata.dat"
+
+def default_metadata() -> str | None:
+    """``global-metadata.dat`` inside ``TDG_GAME_DIR``, when that environment variable is set."""
+    game = os.environ.get("TDG_GAME_DIR")
+    if not game:
+        return None
+    return os.path.join(game, "True Disc Golf_Data", "il2cpp_data", "Metadata", "global-metadata.dat")
 
 
 def find_occurrences(blob: bytes, term: str) -> list[int]:
@@ -37,11 +45,19 @@ def identifiers_around(blob: bytes, offset: int, window: int) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("term")
-    parser.add_argument("--metadata", default=DEFAULT_METADATA, help="path to global-metadata.dat")
+    parser.add_argument("--metadata", default=default_metadata(),
+                        help="path to global-metadata.dat (default: TDG_GAME_DIR)")
     parser.add_argument("--window", type=int, default=1200, help="bytes of context each side")
     parser.add_argument("--whole", action="store_true", help="print the whole heap slice, not split identifiers")
     args = parser.parse_args(argv)
 
+    if args.metadata is None:
+        print(
+            "Say where the game is: --metadata <path to global-metadata.dat>, or set "
+            "TDG_GAME_DIR to the install folder.",
+            file=sys.stderr,
+        )
+        return 2
     if not os.path.isfile(args.metadata):
         print(f"no metadata file at {args.metadata}", file=sys.stderr)
         return 1

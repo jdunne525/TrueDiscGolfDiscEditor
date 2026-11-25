@@ -16,9 +16,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from tdgedit import es3  # noqa: E402
-from tdgedit.savefile import DiscSave  # noqa: E402
+from tdgedit.savefile import DiscSave, SaveChangedError  # noqa: E402
 
-BASELINE = os.path.join(ROOT, "saves", "baseline-2026-11-21_true-disc-golf.es3")
+BASELINE = os.path.join(ROOT, "saves", "sample-save.es3")
 
 FIXTURE = """{
 \t"asetukset" : {
@@ -252,6 +252,43 @@ class TestDiscSave(FixtureCase):
     def test_only_whitelisted_fields_are_editable(self) -> None:
         with self.assertRaises(ValueError):
             self.save.stage(0, "nimi", "something else")
+
+    def test_a_file_written_after_reading_refuses_the_edit(self) -> None:
+        """The game rewrote the save, so the staged edits belong to a file that is gone."""
+        self.save.stage(0, "wear", 500)
+        self.assertFalse(self.save.changed_on_disk())
+        rewritten = self.text.replace('"playerstutorial"', '"playerstutorial2"')
+        with open(self.path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(rewritten)
+        self.assertTrue(self.save.changed_on_disk())
+        with self.assertRaises(SaveChangedError):
+            self.save.save()
+        self.assertEqual(es3.read_text(self.path), rewritten)
+        self.assertFalse([n for n in os.listdir(self.tmp) if ".bak-" in n])
+        self.assertTrue(self.save.has_changes)
+
+    def test_a_file_rewritten_to_the_same_bytes_still_writes(self) -> None:
+        self.save.stage(0, "wear", 500)
+        with open(self.path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(self.text)
+        self.assertFalse(self.save.changed_on_disk())
+        self.save.save()
+        self.assertEqual(es3.parse_file(self.path)["kiekot"]["value"][0]["wear"], 500)
+
+    def test_a_missing_file_refuses_the_edit(self) -> None:
+        self.save.stage(0, "wear", 500)
+        os.remove(self.path)
+        with self.assertRaises(SaveChangedError):
+            self.save.save()
+        self.assertFalse([n for n in os.listdir(self.tmp) if ".bak-" in n])
+
+    def test_every_edit_leaves_its_own_backup(self) -> None:
+        self.save.stage(0, "wear", 100)
+        first = self.save.save()
+        self.save.stage(0, "wear", 200)
+        second = self.save.save()
+        self.assertEqual(es3.read_text(first), self.text)
+        self.assertEqual(es3.read_text(second), self.text.replace('"wear" : 0', '"wear" : 100', 1))
 
     def test_reload_after_save_shows_new_wear(self) -> None:
         self.save.stage(0, "wear", 700)

@@ -1,18 +1,10 @@
-*.mcw merge=verify
-*.mcp merge=verify
-*.map merge=verify
-*.hex merge=verify
-*.exe merge=verify
-*.dll merge=verify
-*.ASM text eol=crlf
-*.INC text eol=crlf
-*.c text eol=crlf
-*.h text eol=crlf
-*.C text eol=crlf
-*.H text eol=crlf
-*.s text eol=crlf
-*.S text eol=crlf
-*.SCM text eol=crlf
-*.scm text eol=crlf
-# Easy Save 3 files keep their exact bytes; the editor compares them byte for byte
+# Line endings are decided here, not by whoever cloned the repo.
+* text=auto eol=lf
+
+# Easy Save 3 files keep their exact bytes: the editor compares them byte for byte, and
+# write backups are save files too.
 *.es3 -text
+*.es3.bak-* -text
+
+# The Windows launcher needs CRLF.
+*.bat text eol=crlf

@@ -1,7 +1,9 @@
 """True Disc Golf disc wear editor.
 
 Reads the game's Easy Save 3 file, shows the discs in the bag with their wear, and writes
-new wear values back into the save without disturbing anything else in the file.
+new wear values back into the save without disturbing anything else in the file. Writing can
+corrupt a save, so the risk is stated when the window opens, every write backs the file up
+first, and a write is refused if the file changed since it was read.
 """
 
 from __future__ import annotations
@@ -12,7 +14,16 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import snapshots
-from .savefile import Disc, DiscSave, SaveLocation, discover_saves, process_is_running
+from .disclaimer import FULL as DISCLAIMER
+from .disclaimer import SHORT as SHORT_WARNING
+from .savefile import (
+    Disc,
+    DiscSave,
+    SaveChangedError,
+    SaveLocation,
+    discover_saves,
+    process_is_running,
+)
 
 COLUMNS = (
     ("num", "disc", 90),
@@ -57,6 +68,8 @@ class App(tk.Tk):
         self._bind_keys()
         self._find_saves()
         self._warn_job = self.after(6000, self._warn_loop)
+        # The risk is shown before anything is read or written, so it is not a surprise later.
+        messagebox.showwarning("Before you start", DISCLAIMER)
 
     # -------------------------------------------------------------- widgets
 
@@ -137,8 +150,6 @@ class App(tk.Tk):
         self.bulk_pct = ttk.Entry(bulk, width=7)
         self.bulk_pct.pack(side="left", padx=6)
         ttk.Button(bulk, text="Apply to listed", command=self._apply_bulk).pack(side="left")
-        ttk.Button(bulk, text="Snapshot", command=self._snapshot).pack(side="right", padx=4)
-        ttk.Button(bulk, text="Compare snapshots…", command=self._open_compare).pack(side="right", padx=4)
 
         bottom = ttk.Frame(self, padding=(10, 4, 10, 10))
         bottom.pack(fill="x")
@@ -147,6 +158,8 @@ class App(tk.Tk):
         ttk.Button(bottom, text="Discard staged", command=self._discard).pack(side="left", padx=6)
         ttk.Label(bottom, foreground="#555555",
                   text="Close the game before writing: the game rewrites the save when it quits.").pack(side="left", padx=10)
+        self.risk_label = ttk.Label(bottom, foreground="#7a3b00", text=SHORT_WARNING)
+        self.risk_label.pack(side="right")
 
     # -------------------------------------------------------------- saves
 
@@ -161,6 +174,10 @@ class App(tk.Tk):
             self.reload()
 
     def _on_save_choice(self, label: str) -> None:
+        previous = self.location_var.get()
+        if not self._confirm_discard_staged(f"Opening {label}"):
+            self.location_var.set(previous)
+            return
         self.location_var.set(label)
         if label == BROWSE:
             path = filedialog.askopenfilename(
@@ -168,6 +185,8 @@ class App(tk.Tk):
                 filetypes=[("Easy Save 3 files", "*.es3"), ("all files", "*.*")],
             )
             if not path:
+                # nothing picked, so the save still in use is what the menu should say
+                self.location_var.set(previous)
                 return
             self.custom_path = path
             self.save = None
@@ -180,7 +199,23 @@ class App(tk.Tk):
     def _current_location(self) -> SaveLocation | None:
         return next((l for l in self.locations if l.label == self.location_var.get()), None)
 
+    def _confirm_discard_staged(self, action: str) -> bool:
+        """Ask before a load reads the file over edits that were never written."""
+        if self.save is None or not self.save.has_changes:
+            return True
+        count = len(self.save.staged)
+        return bool(
+            messagebox.askyesno(
+                "Unwritten changes will be lost",
+                f"{action} reads the save file again, and the staged edits live only in this "
+                f"window.\n\n{count} staged change(s) have not been written to the save and "
+                "would be lost.\n\nDiscard them and continue?",
+            )
+        )
+
     def reload(self) -> None:
+        if not self._confirm_discard_staged("Reloading"):
+            return
         loc = self._current_location()
         if loc is not None:
             self._load_path(loc.path)
@@ -413,16 +448,40 @@ class App(tk.Tk):
             ):
                 return
         try:
-            backup = self.save.save(backup=True)
+            backup = self.save.save()
+        except SaveChangedError as exc:
+            self.status_var.set("not written: the save changed since it was read")
+            messagebox.showwarning(
+                "The save changed since it was read",
+                f"{exc}\n\n"
+                "The game, or something else, wrote this file after this window read it, so "
+                "applying the staged edits would work from a copy of the save that no longer "
+                "exists and would undo whatever was just written.\n\n"
+                "Nothing was written; the staged edits are still listed in the window. Press "
+                "Reload (or F5) to read the save again - reloading drops the staged edits, so "
+                "set the values again afterwards.",
+            )
+            return
         except Exception as exc:
             messagebox.showerror("Write failed", str(exc))
             return
         self._refresh_rows()
         self._update_staged_label()
         self.status_var.set(f"wrote {self.save.path}")
-        messagebox.showinfo("Saved", f"Wrote {self.save.path}\nBackup: {backup}")
+        messagebox.showinfo(
+            "Saved",
+            f"Wrote {self.save.path}\n"
+            f"Backup of the save as it was before this write:\n{backup}\n\n"
+            "If the game will not load the save, close it, put that file back over SaveFile.es3 "
+            "and start the game to check.",
+        )
 
     def _snapshot(self) -> None:
+        """Copy the save into ``saves/``.
+
+        The window has no button for this any more; ``tdg_cli.py snapshot`` and scripts reach
+        the same code, so the calibration loop still works.
+        """
         if self.save is None:
             return
         tag = messagebox.askstring("Snapshot", "Name this snapshot (for example: before)") or ""
@@ -434,6 +493,7 @@ class App(tk.Tk):
         messagebox.showinfo("Snapshot saved", dest)
 
     def _open_compare(self) -> None:
+        """The before/after diff window. Also buttonless, for the same reason."""
         CompareWindow(self)
 
     # -------------------------------------------------------------- keyboard

@@ -98,12 +98,38 @@ class TestCli(TempSaveCase):
     def test_set_wear_by_number_writes_and_backs_up(self) -> None:
         code, out = self.run_cli("set", "--disc", "#7", "--wear", "3000", "--save", self.path)
         self.assertEqual(code, 0, out)
+        self.assertIn("backup of the file", out)
         discs = es3.parse_file(self.path)["kiekot"]["value"]
         self.assertEqual(discs[1]["wear"], 3000)
         self.assertEqual(discs[0]["wear"], 0)
         backups = [n for n in os.listdir(self.tmp) if n.startswith("SaveFile.es3.bak-")]
         self.assertEqual(len(backups), 1)
         self.assertEqual(es3.read_text(os.path.join(self.tmp, backups[0])), FIXTURE)
+
+    def test_a_file_written_after_the_read_is_not_edited(self) -> None:
+        """The game saving while the command runs means the values go into a stale copy."""
+        original = cli.DiscSave
+
+        class RacingSave(original):
+            def __init__(self, path: str) -> None:
+                super().__init__(path)
+                es3.write_text(self.path, self.text.replace('"playerstutorial"', '"playerstutorial2"'))
+
+        cli.DiscSave = RacingSave
+        self.addCleanup(setattr, cli, "DiscSave", original)
+        code, out = self.run_cli("set", "--disc", "#7", "--wear", "3000", "--save", self.path)
+        self.assertEqual(code, 2, out)
+        self.assertIn("Nothing was written", out)
+        self.assertIn("Run the command again", out)
+        self.assertEqual(es3.read_text(self.path), FIXTURE.replace('"playerstutorial"', '"playerstutorial2"'))
+        self.assertFalse([n for n in os.listdir(self.tmp) if ".bak-" in n])
+
+    def test_disclaimer_is_printed(self) -> None:
+        code, out = self.run_cli("disclaimer")
+        self.assertEqual(code, 0)
+        self.assertIn("no warranty", out.lower())
+        self.assertIn("backup", out.lower())
+        self.assertIn("SaveFile.es3.bak", out)
 
     def test_set_wear_pct_uses_durability(self) -> None:
         code, _ = self.run_cli("set", "--disc", "#3", "--wear-pct", "50", "--save", self.path)
