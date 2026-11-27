@@ -7,6 +7,11 @@ bag, so each disc can be tuned by hand instead of grinding it in game.
 Windows, Python 3.10+, standard library only — the GUI is tkinter, nothing to install, no
 network.
 
+![The editor's window: the disc bag listed with type, bag slot, name, maker, plastic, speed, weight, durability, wear and favourite, with the selected disc's wear slider, presets and the stage/write buttons below](img/Screenshot1.png)
+
+The window, after a save has been read: each disc's wear as a percentage of its durability,
+one disc selected, and its value staged but not yet written.
+
 ## Read this first: the risk
 
 Editing the save can **corrupt** it. If the game cannot read the file, it usually starts a
@@ -109,6 +114,7 @@ Plan and the evidence behind the wear fields:
 | `src/tdgedit/snapshots.py` | snapshots and the before/after diff |
 | `src/tdgedit/gui.py` | tkinter window |
 | `src/tdgedit/cli.py` | argparse front end |
+| `img/Screenshot1.png` | the window, shown above |
 | `tests/` | `python -m unittest discover -s tests` |
 | `saves/sample-save.es3` | a save taken from a fresh install, so the tests cover the real file shape; it holds no personal data |
 | `tools/metadata_strings.py`, `tools/scan_assets.py` | read-only probes used to find the wear identifiers (point them at your own install; the asset scan needs UnityPy) |
